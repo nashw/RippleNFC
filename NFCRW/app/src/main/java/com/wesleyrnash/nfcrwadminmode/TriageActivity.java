@@ -25,6 +25,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.os.Build;
 import android.widget.Button;
+import android.widget.TableLayout;
+import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -45,11 +47,24 @@ public class TriageActivity extends Activity {
     boolean writeMode;
     Tag mytag;
     Context ctx;
-    //Button btnWrite;
 
     TextView lastName;
     TextView firstName;
     TextView tagId;
+
+    TableLayout table1;
+    TableRow table1Row1;
+    TextView table1Row1Time;
+    TextView table1Row1BP;
+    TextView table1Row1Pulse;
+    TextView table1Row1Respiration;
+
+    TableLayout table2;
+    TableRow table2Row1;
+    TextView table2Row1Time;
+    TextView table2Row1DS;
+    TextView table2Row1Dose;
+
     ArrayList<TextView> textViews;
     ArrayList<String> headers;
 
@@ -67,10 +82,25 @@ public class TriageActivity extends Activity {
         setContentView(R.layout.activity_triage);
 
         ctx=this;
-        //btnWrite = (Button) findViewById(R.id.button_writeMessage);
+
         lastName = (TextView)findViewById(R.id.et_lastName);
         firstName = (TextView)findViewById(R.id.et_firstName);
         tagId = (TextView) findViewById(R.id.tv_tagID);
+
+        table1 = (TableLayout) findViewById(R.id.tl_table1);
+        table2 = (TableLayout) findViewById(R.id.tl_table2);
+
+        table1Row1 = (TableRow) findViewById(R.id.tr_table1_row1);
+        table2Row1 = (TableRow) findViewById(R.id.tr_table2_row1);
+
+        table1Row1Time = (TextView) findViewById(R.id.et_table1_row1_time);
+        table1Row1BP = (TextView) findViewById(R.id.et_table1_row1_bp);
+        table1Row1Pulse = (TextView) findViewById(R.id.et_table1_row1_pulse);
+        table1Row1Respiration = (TextView) findViewById(R.id.et_table1_row1_respiration);
+
+        table2Row1Time = (TextView) findViewById(R.id.et_table2_row1_time);
+        table2Row1DS = (TextView) findViewById(R.id.et_table2_row1_ds);
+        table2Row1Dose = (TextView) findViewById(R.id.et_table2_row1_dose);
 
         textViews = new ArrayList<TextView>();
         headers = new ArrayList<String>();
@@ -78,6 +108,22 @@ public class TriageActivity extends Activity {
         headers.add("ln");
         textViews.add(firstName);
         headers.add("fn");
+
+        textViews.add(table1Row1Time);
+        headers.add("t1r1t");
+        textViews.add(table1Row1BP);
+        headers.add("t1r1b");
+        textViews.add(table1Row1Pulse);
+        headers.add("t1r1p");
+        textViews.add(table1Row1Respiration);
+        headers.add("t1r1r");
+
+        textViews.add(table2Row1Time);
+        headers.add("t2r1t");
+        textViews.add(table2Row1DS);
+        headers.add("t2r1s");
+        textViews.add(table2Row1Dose);
+        headers.add("t2r1d");
 
         toggleMode = (Button) findViewById(R.id.button_readwrite);
 
@@ -103,7 +149,7 @@ public class TriageActivity extends Activity {
         writeTagFilters = new IntentFilter[] { tagDetected };
     }
 
-    private void read(Tag tag){
+    private void read(Tag tag) throws NullPointerException{
         Ndef ndef = Ndef.get(tag);
 
         NdefMessage ndefMessage = ndef.getCachedNdefMessage();
@@ -159,13 +205,18 @@ public class TriageActivity extends Activity {
                 if(i % 2 == 0 && i != 0)
                     messages.add(tokens[i]);
             }
-            for(int i = 0; i < readTextViews.size(); i++){
-                if(messages.get(i).equals(" "))
-                    messages.set(i, "");
-                if(readTextViews.get(i).equals("ln"))
-                    lastName.setText(messages.get(i));
-                if(readTextViews.get(i).equals("fn"))
-                    firstName.setText(messages.get(i));
+            for(int j = 0; j < textViews.size(); j++){
+                for(int i = 0; i < readTextViews.size(); i++){
+
+                    if(headers.get(j).equals(readTextViews.get(i))){
+                        textViews.get(j).setText(messages.get(i));
+                        readTextViews.remove(i);
+                        messages.remove(i);
+                        break;
+                    } else {
+                        textViews.get(j).setText("");
+                    }
+                }
             }
         }
 
@@ -176,8 +227,8 @@ public class TriageActivity extends Activity {
         for(int i = 0; i < textViews.size(); i++){
             if(!textViews.get(i).getText().toString().equals(""))
                 message += "," + headers.get(i) + "," + textViews.get(i).getText().toString();
-            else
-                message += "," + headers.get(i) + "," + " ";
+            //else
+                //message += "," + headers.get(i) + "," + " ";
         }
 
 
@@ -260,8 +311,8 @@ public class TriageActivity extends Activity {
                     write(message,mytag);
                     Toast.makeText(ctx, ctx.getString(R.string.ok_writing), Toast.LENGTH_LONG ).show();
                     //btnWrite.setText("Write successful!");
-                    lastName.setText("Test");
-                    firstName.setText("Test");
+                    for(int i = 0; i < textViews.size(); i++)
+                        textViews.get(i).setText("Test");
                 }
             } catch (IOException e) {
                 Toast.makeText(ctx, ctx.getString(R.string.error_writing), Toast.LENGTH_SHORT ).show();
@@ -297,7 +348,12 @@ public class TriageActivity extends Activity {
                 Log.d(TAG, "MIME TEXT PLAIN");
 
                 Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
-                read(tag);
+                try{
+                    read(tag);
+                } catch (NullPointerException e){
+                    e.printStackTrace();
+                    Log.e(TAG, "Null Pointer", e);
+                }
                 //new NdefReaderTask().execute(tag);
 
             } else {
