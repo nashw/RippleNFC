@@ -11,40 +11,38 @@ import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.nfc.tech.Ndef;
-import android.os.AsyncTask;
-import android.support.v7.app.ActionBarActivity;
-import android.support.v7.app.ActionBar;
-import android.support.v4.app.Fragment;
 import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
-import android.os.Build;
 import android.widget.Button;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.security.Key;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import javax.crypto.Cipher;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.spec.SecretKeySpec;
 
 public class TriageActivity extends Activity {
 
+    //initialize values for read and write mode and set initial mode to WRITE_MODE
     final int READ_MODE = 0;
     final int WRITE_MODE = 1;
     int mode = WRITE_MODE;
 
+    //set up NFC variables
     NfcAdapter adapter;
     PendingIntent pendingIntent;
     IntentFilter writeTagFilters[];
-    boolean writeMode;
     Tag mytag;
     Context ctx;
 
@@ -52,6 +50,7 @@ public class TriageActivity extends Activity {
     TextView firstName;
     TextView tagId;
 
+    //table 1 setup
     TableLayout table1;
     TableRow table1Row1;
     TextView table1Row1Time;
@@ -59,21 +58,26 @@ public class TriageActivity extends Activity {
     TextView table1Row1Pulse;
     TextView table1Row1Respiration;
 
+    //table 2 setup
     TableLayout table2;
     TableRow table2Row1;
     TextView table2Row1Time;
     TextView table2Row1DS;
     TextView table2Row1Dose;
 
+    //ArrayLists to contain all the TextViews and their corresponding headers
     ArrayList<TextView> textViews;
     ArrayList<String> headers;
 
     public static final String MIME_TEXT_PLAIN = "text/plain";
     public static final String TAG = "NFCRW";
 
-    private TextView readMessage;
-    private NfcAdapter mNfcAdapter;
+    //set up encryption variables
+    public static final String key = "TestTestTestTest";
+    Key aesKey;
+    Cipher cipher;
 
+    //button to toggle between reading and writing
     Button toggleMode;
 
     @Override
@@ -83,6 +87,15 @@ public class TriageActivity extends Activity {
 
         ctx=this;
 
+        //set up encryption key and cipher
+        try{
+            aesKey = new SecretKeySpec(key.getBytes(), "AES");
+            cipher = Cipher.getInstance("AES");
+        } catch (Exception e){
+            e.printStackTrace();
+        }
+
+        //initialize UI elements
         lastName = (TextView)findViewById(R.id.et_lastName);
         firstName = (TextView)findViewById(R.id.et_firstName);
         tagId = (TextView) findViewById(R.id.tv_tagID);
@@ -102,6 +115,7 @@ public class TriageActivity extends Activity {
         table2Row1DS = (TextView) findViewById(R.id.et_table2_row1_ds);
         table2Row1Dose = (TextView) findViewById(R.id.et_table2_row1_dose);
 
+        //add TextViews and headers to ArrayLists
         textViews = new ArrayList<TextView>();
         headers = new ArrayList<String>();
         textViews.add(lastName);
@@ -127,9 +141,11 @@ public class TriageActivity extends Activity {
 
         toggleMode = (Button) findViewById(R.id.button_readwrite);
 
+        //set click listener for toggle button
         toggleMode.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                //when clicked, the mode changes to whichever mode it is not currently
                 if(mode == WRITE_MODE){
                     mode = READ_MODE;
                     toggleMode.setText(R.string.string_readMode);
@@ -142,6 +158,7 @@ public class TriageActivity extends Activity {
             }
         });
 
+        //set up intent filter to handle intents when NFC is detected
         adapter = NfcAdapter.getDefaultAdapter(this);
         pendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
         IntentFilter tagDetected = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
@@ -149,12 +166,14 @@ public class TriageActivity extends Activity {
         writeTagFilters = new IntentFilter[] { tagDetected };
     }
 
+    //gets the message and records from the tag
     private void read(Tag tag) throws NullPointerException{
         Ndef ndef = Ndef.get(tag);
 
         NdefMessage ndefMessage = ndef.getCachedNdefMessage();
 
         NdefRecord[] records = ndefMessage.getRecords();
+        //check if the records are of acceptable format. If so, read the message
         for (NdefRecord ndefRecord : records) {
             if (ndefRecord.getTnf() == NdefRecord.TNF_WELL_KNOWN && Arrays.equals(ndefRecord.getType(), NdefRecord.RTD_TEXT)) {
                 try {
@@ -166,55 +185,86 @@ public class TriageActivity extends Activity {
         }
     }
 
+    //reads the message contained on the tag
     private void readText(NdefRecord record) throws UnsupportedEncodingException {
+        //get the payload and id from the record
         byte[] payload = record.getPayload();
         byte[] idBytes = record.getId();
         String id = new String(idBytes);
 
+        //check which type of encoding the payload is in
         String textEncoding = ((payload[0] & 128) == 0) ? "UTF-8" : "UTF-16";
 
         // Get the Language Code
         int languageCodeLength = payload[0] & 0063;
 
-        // String languageCode = new String(payload, 1, languageCodeLength, "US-ASCII");
-        // e.g. "en"
+        //extract the message from the payload (get rid of the language code)
+        byte[] textBytes = Arrays.copyOfRange(payload, languageCodeLength + 1, payload.length);
 
-        // Get the Text
-        String text =  new String(payload, languageCodeLength + 1, payload.length - languageCodeLength - 1, textEncoding);
-        updateTextViews(id, text);
+        updateTextViews(id, textBytes);
     }
 
-    public void updateTextViews(String id, String result){
+    //decrypts the message and sets the TextViews to the values specified by the message
+    public void updateTextViews(String id, byte[] textBytes){
+        //set the ID field
         tagId.setText("Tag ID: " + id);
 
-        if (result != null) {
-            Log.d(TAG, "in onPostExecute, not NULL");
+        //check to make sure the message isn't empty
+        if (textBytes != null) {
+            Log.d(TAG, new String(textBytes));
+            //create an ArrayList to store the bytes of the message
+            ArrayList<Byte> resultBytes = new ArrayList<Byte>();
+            try{
+                //decrypt the message into a byte array
+                cipher.init(Cipher.DECRYPT_MODE, aesKey);
+                byte[] decoded = cipher.doFinal(textBytes);
+                //store the byte array into the ArrayList
+                for(int i = 0; i < decoded.length; i ++)
+                    resultBytes.add(i, decoded[i]);
+                Log.d(TAG, "decoded them bytes");
+            } catch (Exception e){
+                e.printStackTrace();
+                Log.d(TAG, "Exception", e);
+            }
+            //convert the ArrayList back into a byte array
+            byte[] decodedBytes = new byte[resultBytes.size()];
+            for(int i = 0; i < resultBytes.size(); i++)
+                decodedBytes[i] = resultBytes.get(i);
+            //byte[] decodedBytes = Base64.decode(result.getBytes(), Base64.DEFAULT);
+            //convert the message to a string
+            String result = new String(decodedBytes);
             Log.d(TAG, result);
-            byte[] decodedBytes = Base64.decode(result.getBytes(), Base64.DEFAULT);
-            result = new String(decodedBytes);
-            Log.d(TAG, result);
-            //Toast.makeText(ctx, "onPostExecute", Toast.LENGTH_SHORT).show();
-            //readMessage.setText("");
+
+            //parse the message
             String delims = "[,]+";
             String[] tokens = result.split(delims);
+
+            //create ArrayLists to hold the headers and texts in the message
             ArrayList<String> readTextViews = new ArrayList<String>();
             ArrayList<String> messages = new ArrayList<String>();
+
             for(int i = 0; i < tokens.length; i++){
+                //add headers
                 if(i % 2 == 1)
                     readTextViews.add(tokens[i]);
+                //add texts
                 if(i % 2 == 0 && i != 0)
                     messages.add(tokens[i]);
             }
+            //loop through all TextViews in the UI
             for(int j = 0; j < textViews.size(); j++){
+                //clear any text in the TextView
+                textViews.get(j).setText("");
+                //loop through the number of text views that were read from the tag
                 for(int i = 0; i < readTextViews.size(); i++){
-
+                    //check if the current header is one that was read from the tag
                     if(headers.get(j).equals(readTextViews.get(i))){
+                        //set the text of the corresponding TextView to the corresponding message
                         textViews.get(j).setText(messages.get(i));
+                        //remove the read header and message since no other TextView will have the same header
                         readTextViews.remove(i);
                         messages.remove(i);
                         break;
-                    } else {
-                        textViews.get(j).setText("");
                     }
                 }
             }
@@ -222,30 +272,33 @@ public class TriageActivity extends Activity {
 
     }
 
+    //create the message to write to the tag from the EditText views.
     private String createMessage(){
+        //initialize message with a starting character for easier parsing
         String message = "s";
+        //loop through all EditText views
         for(int i = 0; i < textViews.size(); i++){
+            //check if the text is not empty
             if(!textViews.get(i).getText().toString().equals(""))
+                //add the header of the view and the text to the message separated by commas
                 message += "," + headers.get(i) + "," + textViews.get(i).getText().toString();
-            //else
-                //message += "," + headers.get(i) + "," + " ";
         }
 
 
         return message;
     }
 
-
-
+    //writes the message to the tag
     private void write(String text, Tag tag) throws IOException, FormatException, NullPointerException {
-
-
         // Get an instance of Ndef for the tag.
         Ndef ndef = Ndef.get(tag);
 
+        //store the ID on the tag
         String id = getId(ndef);
 
+        //create NDEF records
         NdefRecord[] records = { createRecord(text, id) };
+        //put the records into an NDEF message
         NdefMessage message = new NdefMessage(records);
         // Enable I/O
         ndef.connect();
@@ -255,28 +308,53 @@ public class TriageActivity extends Activity {
         ndef.close();
     }
 
+    //get the ID that is currently on the tag so it is not overwritten
     private String getId(Ndef ndef){
+        //get the message on the tag
         NdefMessage ndefMessage = ndef.getCachedNdefMessage();
 
+        //get the records from the message
         NdefRecord[] records = ndefMessage.getRecords();
+        //check if any records are of the proper type and format
         for (NdefRecord ndefRecord : records) {
             if (ndefRecord.getTnf() == NdefRecord.TNF_WELL_KNOWN && Arrays.equals(ndefRecord.getType(), NdefRecord.RTD_TEXT)) {
+                //get the ID from the record
                 byte[] idBytes = ndefRecord.getId();
+                //convert to string
                 String id = new String(idBytes);
                 return id;
             }
         }
+        //if no ID found, return default
         return "default";
     }
 
+    //turns a string of text into an NDEF formatted record
     private NdefRecord createRecord(String text, String id) throws UnsupportedEncodingException {
+        Log.d(TAG, "creating record: " + text);
+
+        //set the language
         String lang       = "en";
-        byte[] encodedTextBytes = Base64.encode(text.getBytes(), Base64.DEFAULT);
+
+        //initialize byte array for the encoded message
+        byte[] encodedTextBytes = "".getBytes();
+        //encrypt the message
+        try{
+            cipher.init(Cipher.ENCRYPT_MODE, aesKey);
+            encodedTextBytes = cipher.doFinal(text.getBytes());
+        } catch (Exception e){
+            e.printStackTrace();
+        }
+        Log.d(TAG, new String(encodedTextBytes));
+        //byte[] encodedTextBytes = Base64.encode(text.getBytes(), Base64.DEFAULT);
         //byte[] textBytes  = text.getBytes();
+
         byte[] langBytes  = lang.getBytes("US-ASCII");
         int    langLength = langBytes.length;
         int    textLength = encodedTextBytes.length;
 //        int    textLength = textBytes.length;
+
+        //initialize byte array for the payload
         byte[] payload    = new byte[1 + langLength + textLength];
 
         // set status byte (see NDEF spec for actual bits)
@@ -289,28 +367,35 @@ public class TriageActivity extends Activity {
 
 //        String id = "RippleNFC";
 
+        Log.d(TAG, new String(payload));
+
         NdefRecord recordNFC = new NdefRecord(NdefRecord.TNF_WELL_KNOWN,  NdefRecord.RTD_TEXT,  id.getBytes(), payload);
 
         return recordNFC;
     }
 
 
+    //this method is called when a new intent is found. In this case, it is called whenever the tag is brought within range of the Android device
     @Override
     protected void onNewIntent(Intent intent){
+        //check which mode is currently active
         if(mode == WRITE_MODE){
+            //check that the intent that called this method was that an NFC tag was discovered
             if(NfcAdapter.ACTION_TAG_DISCOVERED.equals(intent.getAction())){
+                //set NFC tag object to the data contained in the intent (i.e. the data on the tag)
                 mytag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
-                //Toast.makeText(this, this.getString(R.string.ok_detection) + mytag.toString(), Toast.LENGTH_LONG ).show();
-                //btnWrite.setText(R.string.ok_detection);
             }
             try {
+                //check that the tag was properly read
                 if(mytag==null){
                     Toast.makeText(ctx, ctx.getString(R.string.error_detected), Toast.LENGTH_SHORT).show();
                 }else{
+                    //create the message to write to the tag
                     String message = createMessage();
                     write(message,mytag);
+                    //notify the user of successful writing
                     Toast.makeText(ctx, ctx.getString(R.string.ok_writing), Toast.LENGTH_LONG ).show();
-                    //btnWrite.setText("Write successful!");
+                    //set all the text fields to Test for testing purposes
                     for(int i = 0; i < textViews.size(); i++)
                         textViews.get(i).setText("Test");
                 }
@@ -335,54 +420,52 @@ public class TriageActivity extends Activity {
         }
     }
 
+    //handles the intent in read mode
     private void handleIntent(Intent intent) {
-        Toast.makeText(ctx, "in handleIntent", Toast.LENGTH_SHORT).show();
-        Log.d(TAG, "in handleIntent");
+        //check that the intent is for discovering an NFC tag
         String action = intent.getAction();
         if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
             Log.d(TAG, "NDEF DISCOVERED");
 
+            //check that the tag is in plain text
             String type = intent.getType();
             if (MIME_TEXT_PLAIN.equals(type)) {
 
-                Log.d(TAG, "MIME TEXT PLAIN");
-
+                //store data from the tag into a tag object
                 Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
                 try{
+                    //read from the tag
                     read(tag);
                 } catch (NullPointerException e){
                     e.printStackTrace();
                     Log.e(TAG, "Null Pointer", e);
                 }
-                //new NdefReaderTask().execute(tag);
-
-            } else {
-                Log.d(TAG, "Wrong mime type: " + type);
             }
+        //even if the tag is not in NDEF format, check that it's still a tag intent
         } else if (NfcAdapter.ACTION_TECH_DISCOVERED.equals(action) || NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)) {
             Log.d(TAG, "TECH DISCOVERED");
-
 
             // In case we would still use the Tech Discovered Intent
             Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
             String[] techList = tag.getTechList();
             String searchedTech = Ndef.class.getName();
 
+            //check if the tag is of any of the types of acceptable tags
             for (String tech : techList) {
                 if (searchedTech.equals(tech)) {
+                    //if so, read from the tag
                     read(tag);
-                    //new NdefReaderTask().execute(tag);
                     break;
                 }
             }
-        } else {
-            Log.d(TAG, "No NFC found??");
-            //Log.d(TAG, action);
         }
 
 
     }
 
+    //I'm not to sure why the foreground dispatch needs to be started and stopped in onPause and onResume
+    //but I do know that they are necessary and allow the program to have priority to handle intents
+    //without the activity chooser popping up
     @Override
     public void onPause(){
         if(mode == READ_MODE)
@@ -403,12 +486,10 @@ public class TriageActivity extends Activity {
     }
 
     private void WriteModeOn(){
-        writeMode = true;
         adapter.enableForegroundDispatch(this, pendingIntent, writeTagFilters, null);
     }
 
     private void WriteModeOff(){
-        writeMode = false;
         adapter.disableForegroundDispatch(this);
     }
 
@@ -438,7 +519,7 @@ public class TriageActivity extends Activity {
         adapter.disableForegroundDispatch(activity);
     }
 
-
+    //These two methods were generated with teh program, so I don't know if they are necessary
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
 
@@ -458,98 +539,4 @@ public class TriageActivity extends Activity {
         }
         return super.onOptionsItemSelected(item);
     }
-
-//    private class NdefReaderTask extends AsyncTask<Tag, Void, String> {
-//
-//        @Override
-//        protected String doInBackground(Tag... params) {
-//
-//            Log.d(TAG, "in doInBackground");
-//
-//            Tag tag = params[0];
-//
-//            Ndef ndef = Ndef.get(tag);
-//            if (ndef == null) {
-//                // NDEF is not supported by this Tag.
-//                return null;
-//            }
-//
-//            NdefMessage ndefMessage = ndef.getCachedNdefMessage();
-//
-//            NdefRecord[] records = ndefMessage.getRecords();
-//            for (NdefRecord ndefRecord : records) {
-//                if (ndefRecord.getTnf() == NdefRecord.TNF_WELL_KNOWN && Arrays.equals(ndefRecord.getType(), NdefRecord.RTD_TEXT)) {
-//                    try {
-//                        return readText(ndefRecord);
-//                    } catch (UnsupportedEncodingException e) {
-//                        Log.e(TAG, "Unsupported Encoding", e);
-//                    }
-//                }
-//            }
-//
-//            return null;
-//        }
-//
-//        private String readText(NdefRecord record) throws UnsupportedEncodingException {
-//
-//            Log.d(TAG, "in readText");
-//
-//			/*
-//			 * See NFC forum specification for "Text Record Type Definition" at 3.2.1
-//			 *
-//			 * http://www.nfc-forum.org/specs/
-//			 *
-//			 * bit_7 defines encoding
-//			 * bit_6 reserved for future use, must be 0
-//			 * bit_5..0 length of IANA language code
-//			 */
-//
-//            byte[] payload = record.getPayload();
-//            byte[] id = record.getId();
-//            Log.d(TAG, new String(id));
-//
-//            // Get the Text Encoding
-//            String textEncoding = ((payload[0] & 128) == 0) ? "UTF-8" : "UTF-16";
-//
-//            // Get the Language Code
-//            int languageCodeLength = payload[0] & 0063;
-//
-//            // String languageCode = new String(payload, 1, languageCodeLength, "US-ASCII");
-//            // e.g. "en"
-//
-//            // Get the Text
-//            return new String(payload, languageCodeLength + 1, payload.length - languageCodeLength - 1, textEncoding);
-//        }
-//
-//        @Override
-//        protected void onPostExecute(String result) {
-//            Log.d(TAG, "in onPostExecute");
-//            if (result != null) {
-//                Log.d(TAG, "in onPostExecute, not NULL");
-//                Log.d(TAG, result);
-//                byte[] decodedBytes = Base64.decode(result.getBytes(), Base64.DEFAULT);
-//                result = new String(decodedBytes);
-//                Log.d(TAG, result);
-//                //Toast.makeText(ctx, "onPostExecute", Toast.LENGTH_SHORT).show();
-//                //readMessage.setText("");
-//                String delims = "[,]+";
-//                String[] tokens = result.split(delims);
-//                ArrayList<String> readTextViews = new ArrayList<String>();
-//                ArrayList<String> messages = new ArrayList<String>();
-//                for(int i = 0; i < tokens.length; i++){
-//                    if(i % 2 == 1)
-//                        readTextViews.add(tokens[i]);
-//                    if(i % 2 == 0 && i != 0)
-//                        messages.add(tokens[i]);
-//                }
-//                for(int i = 0; i < readTextViews.size(); i++){
-//                    Log.d(TAG, "setting texts");
-//                    if(readTextViews.get(i).equals("ln"))
-//                        lastName.setText(messages.get(i));
-//                    if(readTextViews.get(i).equals("fn"))
-//                        firstName.setText(messages.get(i));
-//                }
-//            }
-//        }
-//    }
 }
