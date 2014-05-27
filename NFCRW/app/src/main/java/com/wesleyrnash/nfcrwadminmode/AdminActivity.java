@@ -29,7 +29,12 @@ import android.widget.Toast;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.security.Key;
+import java.util.ArrayList;
 import java.util.Arrays;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
 
 public class AdminActivity extends Activity {
 
@@ -44,12 +49,23 @@ public class AdminActivity extends Activity {
 
     public static final String TAG = "NFCRW";
 
+    public static final String key = "TestTestTestTest";
+    Key aesKey;
+    Cipher cipher;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_admin);
 
         ctx = this;
+
+        try{
+            aesKey = new SecretKeySpec(key.getBytes(), "AES");
+            cipher = Cipher.getInstance("AES");
+        } catch (Exception e){
+            e.printStackTrace();
+        }
 
         adminInstructions = (TextView) findViewById(R.id.tv_adminInstructions);
         tagId = (TextView) findViewById(R.id.et_adminID);
@@ -67,7 +83,7 @@ public class AdminActivity extends Activity {
         // Get an instance of Ndef for the tag.
         Ndef ndef = Ndef.get(tag);
 
-        String text = getText(ndef);
+        byte[] text = getText(ndef);
 
         NdefRecord[] records = { createRecord(text, id) };
         NdefMessage message = new NdefMessage(records);
@@ -79,51 +95,20 @@ public class AdminActivity extends Activity {
         ndef.close();
     }
 
-    private String getText(Ndef ndef){
+    private byte[] getText(Ndef ndef){
         NdefMessage ndefMessage = ndef.getCachedNdefMessage();
 
         NdefRecord[] records = ndefMessage.getRecords();
         for (NdefRecord ndefRecord : records) {
             if (ndefRecord.getTnf() == NdefRecord.TNF_WELL_KNOWN && Arrays.equals(ndefRecord.getType(), NdefRecord.RTD_TEXT)) {
-                byte[] payload = ndefRecord.getPayload();
-                String textEncoding = ((payload[0] & 128) == 0) ? "UTF-8" : "UTF-16";
-                int languageCodeLength = payload[0] & 0063;
-                try{
-                    String result = new String(payload, languageCodeLength + 1, payload.length - languageCodeLength - 1, textEncoding);
-                    byte[] decodedBytes = Base64.decode(result.getBytes(), Base64.DEFAULT);
-                    result = new String(decodedBytes);
-                    return result;
-                } catch (UnsupportedEncodingException e){
-                    e.printStackTrace();
-                    Log.e(TAG, "Unsupported Encoding", e);
-                }
+                return ndefRecord.getPayload();
             }
         }
-        return "default";
+        return "default".getBytes();
     }
 
-    private NdefRecord createRecord(String text, String id) throws UnsupportedEncodingException {
-        String lang       = "en";
-        byte[] encodedTextBytes = Base64.encode(text.getBytes(), Base64.DEFAULT);
-        //byte[] textBytes  = text.getBytes();
-        byte[] langBytes  = lang.getBytes("US-ASCII");
-        int    langLength = langBytes.length;
-        int    textLength = encodedTextBytes.length;
-//        int    textLength = textBytes.length;
-        byte[] payload    = new byte[1 + langLength + textLength];
-
-        // set status byte (see NDEF spec for actual bits)
-        payload[0] = (byte) langLength;
-
-        // copy langbytes and textbytes into payload
-        System.arraycopy(langBytes,        0, payload, 1,              langLength);
-        System.arraycopy(encodedTextBytes, 0, payload, 1 + langLength, textLength);
-//        System.arraycopy(textBytes, 0, payload, 1 + langLength, textLength);
-
-//        String id = "RippleNFC";
-
-        NdefRecord recordNFC = new NdefRecord(NdefRecord.TNF_WELL_KNOWN,  NdefRecord.RTD_TEXT,  id.getBytes(), payload);
-
+    private NdefRecord createRecord(byte[] text, String id) throws UnsupportedEncodingException {
+        NdefRecord recordNFC = new NdefRecord(NdefRecord.TNF_WELL_KNOWN,  NdefRecord.RTD_TEXT,  id.getBytes(), text);
         return recordNFC;
     }
 
