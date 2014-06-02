@@ -25,6 +25,11 @@ import android.widget.Toast;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.msgpack.MessagePack;
+import org.msgpack.packer.Packer;
+import org.msgpack.template.Template;
+import static org.msgpack.template.Templates.tMap;
+import static org.msgpack.template.Templates.TString;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -32,6 +37,9 @@ import java.security.Key;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+
 import javax.crypto.Cipher;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
@@ -86,6 +94,10 @@ public class TriageActivity extends Activity {
 
     JSONObject jsonMessage;
 
+    MessagePack msgPack;
+    Template<Map<String, String>> mapTemplate;
+    Map<String, String> map;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -107,6 +119,10 @@ public class TriageActivity extends Activity {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
+        msgPack = new MessagePack();
+        mapTemplate = tMap(TString, TString);
+        map = new HashMap<String, String>();
 
         //initialize UI elements
         lastName = (TextView)findViewById(R.id.et_lastName);
@@ -246,13 +262,22 @@ public class TriageActivity extends Activity {
             //byte[] decodedBytes = Base64.decode(result.getBytes(), Base64.DEFAULT);
             //convert the message to a string
             //String result = new String(decodedBytes);
-            String readString = new String(decodedBytes);
-            JSONObject result = null;
+
+//            String readString = new String(decodedBytes);
+//            JSONObject result = null;
+//            try {
+//                result = new JSONObject(readString);
+//            } catch (JSONException e) {
+//                e.printStackTrace();
+//            }
+
+            Map<String, String> result = new HashMap<String, String>();
             try {
-                result = new JSONObject(readString);
-            } catch (JSONException e) {
+                result = msgPack.read(decodedBytes, mapTemplate);
+            } catch (IOException e) {
                 e.printStackTrace();
             }
+
             Log.d(TAG, result.toString());
 
 //            //parse the message
@@ -292,7 +317,7 @@ public class TriageActivity extends Activity {
 
             //loop through all TextViews in the UI
             for(int i = 0; i < textViews.size(); i++){
-                textViews.get(i).setText(result.optString(headers.get(i)));
+                textViews.get(i).setText(result.get(headers.get(i)));
             }
         }
 
@@ -336,6 +361,19 @@ public class TriageActivity extends Activity {
 
 
         //return message;
+    }
+
+    //create the message to write to the tag from the EditText views.
+    private void createMap(){
+        //initialize message with a starting character for easier parsing
+        map.put("s", "");
+        //loop through all EditText views
+        for(int i = 0; i < textViews.size(); i++){
+            //check if the text is not empty
+            if(!textViews.get(i).getText().toString().equals(""))
+                //add the header of the view and the text to the message separated by commas
+                map.put(headers.get(i), textViews.get(i).getText().toString());
+        }
     }
 
 //    //writes the message to the tag
@@ -467,6 +505,20 @@ public class TriageActivity extends Activity {
         } catch (Exception e){
             e.printStackTrace();
         }
+
+        createMap();
+        byte[] msgpackBytes = "".getBytes();
+        try {
+            msgpackBytes = msgPack.write(map);
+            cipher.init(Cipher.ENCRYPT_MODE, aesKey);
+            msgpackBytes = cipher.doFinal(msgpackBytes);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        Log.d(TAG, new String(msgpackBytes));
+        Log.d(TAG, "" + msgpackBytes.length);
+
         Log.d(TAG, new String(stringBytes));
         Log.d(TAG, "" + stringBytes.length);
 
@@ -477,7 +529,7 @@ public class TriageActivity extends Activity {
 
         byte[] langBytes  = lang.getBytes("US-ASCII");
         int    langLength = langBytes.length;
-        int    textLength = encodedTextBytes.length;
+        int    textLength = msgpackBytes.length;
 //        int    textLength = textBytes.length;
 
         //initialize byte array for the payload
@@ -488,7 +540,7 @@ public class TriageActivity extends Activity {
 
         // copy langbytes and textbytes into payload
         System.arraycopy(langBytes,        0, payload, 1,              langLength);
-        System.arraycopy(encodedTextBytes, 0, payload, 1 + langLength, textLength);
+        System.arraycopy(msgpackBytes, 0, payload, 1 + langLength, textLength);
 //        System.arraycopy(textBytes, 0, payload, 1 + langLength, textLength);
 
 //        String id = "RippleNFC";
