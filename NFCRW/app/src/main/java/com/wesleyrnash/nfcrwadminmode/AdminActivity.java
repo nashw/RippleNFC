@@ -49,23 +49,12 @@ public class AdminActivity extends Activity {
 
     public static final String TAG = "NFCRW";
 
-    public static final String key = "TestTestTestTest";
-    Key aesKey;
-    Cipher cipher;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_admin);
 
         ctx = this;
-
-        try{
-            aesKey = new SecretKeySpec(key.getBytes(), "AES");
-            cipher = Cipher.getInstance("AES");
-        } catch (Exception e){
-            e.printStackTrace();
-        }
 
         adminInstructions = (TextView) findViewById(R.id.tv_adminInstructions);
         tagId = (TextView) findViewById(R.id.et_adminID);
