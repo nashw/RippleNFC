@@ -699,7 +699,7 @@ public class TriageActivity extends Activity {
         adapter.disableForegroundDispatch(activity);
     }
 
-    //These two methods were generated with teh program, so I don't know if they are necessary
+    //These two methods were generated with the program, so I don't know if they are necessary
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
 
