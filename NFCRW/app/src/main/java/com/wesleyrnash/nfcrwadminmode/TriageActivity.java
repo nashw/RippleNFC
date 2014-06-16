@@ -76,6 +76,7 @@ public class TriageActivity extends Activity {
     TextView table2Row1Time;
     TextView table2Row1DS;
     TextView table2Row1Dose;
+    TextView table2Row1Other;
 
     //ArrayLists to contain all the TextViews and their corresponding headers
     ArrayList<TextView> textViews;
@@ -143,6 +144,7 @@ public class TriageActivity extends Activity {
         table2Row1Time = (TextView) findViewById(R.id.et_table2_row1_time);
         table2Row1DS = (TextView) findViewById(R.id.et_table2_row1_ds);
         table2Row1Dose = (TextView) findViewById(R.id.et_table2_row1_dose);
+        table2Row1Other = (TextView) findViewById(R.id.et_table2_row1_other);
 
         //add TextViews and headers to ArrayLists
         textViews = new ArrayList<TextView>();
@@ -167,6 +169,8 @@ public class TriageActivity extends Activity {
         headers.add("t2r1s");
         textViews.add(table2Row1Dose);
         headers.add("t2r1d");
+        textViews.add(table2Row1Other);
+        headers.add("t2r1o");
 
         toggleMode = (Button) findViewById(R.id.button_readwrite);
 
@@ -195,172 +199,18 @@ public class TriageActivity extends Activity {
         writeTagFilters = new IntentFilter[] { tagDetected };
     }
 
-    //gets the message and records from the tag
-    private void read(Tag tag) throws NullPointerException{
-        Ndef ndef = Ndef.get(tag);
-
-        NdefMessage ndefMessage = ndef.getCachedNdefMessage();
-
-        NdefRecord[] records = ndefMessage.getRecords();
-        //check if the records are of acceptable format. If so, read the message
-        for (NdefRecord ndefRecord : records) {
-            if (ndefRecord.getTnf() == NdefRecord.TNF_WELL_KNOWN && Arrays.equals(ndefRecord.getType(), NdefRecord.RTD_TEXT)) {
-                try {
-                    readText(ndefRecord);
-                } catch (UnsupportedEncodingException e) {
-                    Log.e(TAG, "Unsupported Encoding", e);
-                }
-            }
-        }
-    }
-
     //reads the message contained on the tag
-    private void readText(NdefRecord record) throws UnsupportedEncodingException {
-        //get the payload and id from the record
-        byte[] payload = record.getPayload();
-        byte[] idBytes = record.getId();
-        String id = new String(idBytes);
 
-        //check which type of encoding the payload is in
-        String textEncoding = ((payload[0] & 128) == 0) ? "UTF-8" : "UTF-16";
-
-        // Get the Language Code
-        int languageCodeLength = payload[0] & 0063;
-
-        //extract the message from the payload (get rid of the language code)
-        byte[] textBytes = Arrays.copyOfRange(payload, languageCodeLength + 1, payload.length);
-
-        updateTextViews(id, textBytes);
-    }
 
     //decrypts the message and sets the TextViews to the values specified by the message
-    public void updateTextViews(String id, byte[] textBytes){
+    public void updateTextViews(String id, Map<String, String> result){
         //set the ID field
         tagId.setText("Tag ID: " + id);
 
-        //check to make sure the message isn't empty
-        if (textBytes != null) {
-            Log.d(TAG, new String(textBytes));
-            //create an ArrayList to store the bytes of the message
-            ArrayList<Byte> resultBytes = new ArrayList<Byte>();
-            try{
-                //decrypt the message into a byte array
-                cipher.init(Cipher.DECRYPT_MODE, aesKey);
-                byte[] decoded = cipher.doFinal(textBytes);
-                //store the byte array into the ArrayList
-                for(int i = 0; i < decoded.length; i ++)
-                    resultBytes.add(i, decoded[i]);
-                Log.d(TAG, "decoded them bytes");
-            } catch (Exception e){
-                e.printStackTrace();
-                Log.d(TAG, "Exception", e);
-            }
-            //convert the ArrayList back into a byte array
-            byte[] decodedBytes = new byte[resultBytes.size()];
-            for(int i = 0; i < resultBytes.size(); i++)
-                decodedBytes[i] = resultBytes.get(i);
-            //byte[] decodedBytes = Base64.decode(result.getBytes(), Base64.DEFAULT);
-            //convert the message to a string
-            //String result = new String(decodedBytes);
-
-//            String readString = new String(decodedBytes);
-//            JSONObject result = null;
-//            try {
-//                result = new JSONObject(readString);
-//            } catch (JSONException e) {
-//                e.printStackTrace();
-//            }
-
-            Map<String, String> result = new HashMap<String, String>();
-            try {
-                result = msgPack.read(decodedBytes, mapTemplate);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            Log.d(TAG, result.toString());
-
-//            //parse the message
-//            String delims = "[,]+";
-//            String[] tokens = result.split(delims);
-
-//            //create ArrayLists to hold the headers and texts in the message
-//            ArrayList<String> readTextViews = new ArrayList<String>();
-//            ArrayList<String> messages = new ArrayList<String>();
-
-//            for(int i = 0; i < tokens.length; i++){
-//                //add headers
-//                if(i % 2 == 1)
-//                    readTextViews.add(tokens[i]);
-//                //add texts
-//                if(i % 2 == 0 && i != 0)
-//                    messages.add(tokens[i]);
-//            }
-
-//            //loop through all TextViews in the UI
-//            for(int j = 0; j < textViews.size(); j++){
-//                //clear any text in the TextView
-//                textViews.get(j).setText("");
-//                //loop through the number of text views that were read from the tag
-//                for(int i = 0; i < readTextViews.size(); i++){
-//                    //check if the current header is one that was read from the tag
-//                    if(headers.get(j).equals(readTextViews.get(i))){
-//                        //set the text of the corresponding TextView to the corresponding message
-//                        textViews.get(j).setText(messages.get(i));
-//                        //remove the read header and message since no other TextView will have the same header
-//                        readTextViews.remove(i);
-//                        messages.remove(i);
-//                        break;
-//                    }
-//                }
-//            }
-
-            //loop through all TextViews in the UI
-            for(int i = 0; i < textViews.size(); i++){
-                textViews.get(i).setText(result.get(headers.get(i)));
-            }
-        }
-
-    }
-
-    //create the message to write to the tag from the EditText views.
-    private String createString(){
-        //initialize message with a starting character for easier parsing
-        String message = "s";
-        //loop through all EditText views
+        //loop through all TextViews in the UI
         for(int i = 0; i < textViews.size(); i++){
-            //check if the text is not empty
-            if(!textViews.get(i).getText().toString().equals(""))
-                //add the header of the view and the text to the message separated by commas
-                message += "," + headers.get(i) + "," + textViews.get(i).getText().toString();
+            textViews.get(i).setText(result.get(headers.get(i)));
         }
-
-
-        return message;
-    }
-
-    //create the message to write to the tag from the EditText views.
-    private void createJSON(){
-        //initialize message with a starting character for easier parsing
-        //String message = "s";
-        for(String header : headers)
-            jsonMessage.remove(header);
-
-        //loop through all EditText views
-        for(int i = 0; i < textViews.size(); i++){
-            //check if the text is not empty
-            if(!textViews.get(i).getText().toString().equals(""))
-                //add the header of the view and the text to the message separated by commas
-                //message += "," + headers.get(i) + "," + textViews.get(i).getText().toString();
-                try {
-                    jsonMessage.put(headers.get(i), textViews.get(i).getText().toString());
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-        }
-
-
-        //return message;
     }
 
     //create the message to write to the tag from the EditText views.
@@ -374,182 +224,6 @@ public class TriageActivity extends Activity {
                 //add the header of the view and the text to the message separated by commas
                 map.put(headers.get(i), textViews.get(i).getText().toString());
         }
-    }
-
-//    //writes the message to the tag
-//    private void write(String text, Tag tag) throws IOException, FormatException, NullPointerException {
-//        // Get an instance of Ndef for the tag.
-//        Ndef ndef = Ndef.get(tag);
-//
-//        //store the ID on the tag
-//        byte[] id = getId(ndef);
-//
-//        //create NDEF records
-//        NdefRecord[] records = { createRecord(text, id) };
-//        //put the records into an NDEF message
-//        NdefMessage message = new NdefMessage(records);
-//        // Enable I/O
-//        ndef.connect();
-//        // Write the message
-//        ndef.writeNdefMessage(message);
-//        // Close the connection
-//        ndef.close();
-//    }
-
-    //writes the message to the tag
-    private void write(Tag tag) throws IOException, FormatException, NullPointerException {
-        // Get an instance of Ndef for the tag.
-        Ndef ndef = Ndef.get(tag);
-
-        //store the ID on the tag
-        byte[] id = getId(ndef);
-
-        //create NDEF records
-        NdefRecord[] records = { createRecord(id) };
-        //put the records into an NDEF message
-        NdefMessage message = new NdefMessage(records);
-        // Enable I/O
-        ndef.connect();
-        // Write the message
-        ndef.writeNdefMessage(message);
-        // Close the connection
-        ndef.close();
-    }
-
-    //get the ID that is currently on the tag so it is not overwritten
-    private byte[] getId(Ndef ndef){
-        //get the message on the tag
-        NdefMessage ndefMessage = ndef.getCachedNdefMessage();
-
-        //get the records from the message
-        NdefRecord[] records = ndefMessage.getRecords();
-        //check if any records are of the proper type and format
-        for (NdefRecord ndefRecord : records) {
-            if (ndefRecord.getTnf() == NdefRecord.TNF_WELL_KNOWN && Arrays.equals(ndefRecord.getType(), NdefRecord.RTD_TEXT)) {
-                //get the ID from the record
-                return ndefRecord.getId();
-            }
-        }
-        //if no ID found, return default
-        return "default".getBytes();
-    }
-
-//    //turns a string of text into an NDEF formatted record
-//    private NdefRecord createRecord(String text, byte[] id) throws UnsupportedEncodingException {
-//        Log.d(TAG, "creating record: " + text);
-//
-//        //set the language
-//        String lang       = "en";
-//
-//        //initialize byte array for the encoded message
-//        byte[] encodedTextBytes = "".getBytes();
-//        //encrypt the message
-//        try{
-//            cipher.init(Cipher.ENCRYPT_MODE, aesKey);
-//            encodedTextBytes = cipher.doFinal(text.getBytes());
-//        } catch (Exception e){
-//            e.printStackTrace();
-//        }
-//        Log.d(TAG, new String(encodedTextBytes));
-//        Log.d(TAG, "" + encodedTextBytes.length);
-//        //byte[] encodedTextBytes = Base64.encode(text.getBytes(), Base64.DEFAULT);
-//        //byte[] textBytes  = text.getBytes();
-//
-//        byte[] langBytes  = lang.getBytes("US-ASCII");
-//        int    langLength = langBytes.length;
-//        int    textLength = encodedTextBytes.length;
-////        int    textLength = textBytes.length;
-//
-//        //initialize byte array for the payload
-//        byte[] payload    = new byte[1 + langLength + textLength];
-//
-//        // set status byte (see NDEF spec for actual bits)
-//        payload[0] = (byte) langLength;
-//
-//        // copy langbytes and textbytes into payload
-//        System.arraycopy(langBytes,        0, payload, 1,              langLength);
-//        System.arraycopy(encodedTextBytes, 0, payload, 1 + langLength, textLength);
-////        System.arraycopy(textBytes, 0, payload, 1 + langLength, textLength);
-//
-////        String id = "RippleNFC";
-//
-//        Log.d(TAG, new String(payload));
-//
-//        NdefRecord recordNFC = new NdefRecord(NdefRecord.TNF_WELL_KNOWN,  NdefRecord.RTD_TEXT,  id, payload);
-//
-//        return recordNFC;
-//    }
-
-    //turns a string of text into an NDEF formatted record
-    private NdefRecord createRecord(byte[] id) throws UnsupportedEncodingException {
-        Log.d(TAG, "creating record: ");
-
-        //set the language
-        String lang       = "en";
-
-        //initialize byte array for the encoded message
-        byte[] encodedTextBytes = "".getBytes();
-        //encrypt the message
-        try{
-            cipher.init(Cipher.ENCRYPT_MODE, aesKey);
-            encodedTextBytes = cipher.doFinal(jsonMessage.toString().getBytes());
-        } catch (Exception e){
-            e.printStackTrace();
-        }
-
-        String message = createString();
-        byte[] stringBytes = "".getBytes();
-        try{
-            cipher.init(Cipher.ENCRYPT_MODE, aesKey);
-            stringBytes = cipher.doFinal(message.getBytes());
-        } catch (Exception e){
-            e.printStackTrace();
-        }
-
-        createMap();
-        byte[] msgpackBytes = "".getBytes();
-        try {
-            msgpackBytes = msgPack.write(map);
-            cipher.init(Cipher.ENCRYPT_MODE, aesKey);
-            msgpackBytes = cipher.doFinal(msgpackBytes);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        Log.d(TAG, new String(msgpackBytes));
-        Log.d(TAG, "" + msgpackBytes.length);
-
-        Log.d(TAG, new String(stringBytes));
-        Log.d(TAG, "" + stringBytes.length);
-
-        Log.d(TAG, new String(encodedTextBytes));
-        Log.d(TAG, "" + encodedTextBytes.length);
-        //byte[] encodedTextBytes = Base64.encode(text.getBytes(), Base64.DEFAULT);
-        //byte[] textBytes  = text.getBytes();
-
-        byte[] langBytes  = lang.getBytes("US-ASCII");
-        int    langLength = langBytes.length;
-        int    textLength = msgpackBytes.length;
-//        int    textLength = textBytes.length;
-
-        //initialize byte array for the payload
-        byte[] payload    = new byte[1 + langLength + textLength];
-
-        // set status byte (see NDEF spec for actual bits)
-        payload[0] = (byte) langLength;
-
-        // copy langbytes and textbytes into payload
-        System.arraycopy(langBytes,        0, payload, 1,              langLength);
-        System.arraycopy(msgpackBytes, 0, payload, 1 + langLength, textLength);
-//        System.arraycopy(textBytes, 0, payload, 1 + langLength, textLength);
-
-//        String id = "RippleNFC";
-
-        Log.d(TAG, new String(payload));
-
-        NdefRecord recordNFC = new NdefRecord(NdefRecord.TNF_WELL_KNOWN,  NdefRecord.RTD_TEXT,  id, payload);
-
-        return recordNFC;
     }
 
 
@@ -570,9 +244,10 @@ public class TriageActivity extends Activity {
                 }else{
                     //create the message to write to the tag
                     //String message = createMessage();
-                    createJSON();
+                    createMap();
                     //write(message,mytag);
-                    write(mytag);
+                    Write writer = new Write(mytag, map);
+                    writer.write();
                     //notify the user of successful writing
                     Toast.makeText(ctx, ctx.getString(R.string.ok_writing), Toast.LENGTH_LONG ).show();
                     //set all the text fields to Test for testing purposes
@@ -615,7 +290,9 @@ public class TriageActivity extends Activity {
                 Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
                 try{
                     //read from the tag
-                    read(tag);
+                    Read reader = new Read(tag);
+                    reader.read();
+                    updateTextViews(reader.id, reader.result);
                 } catch (NullPointerException e){
                     e.printStackTrace();
                     Log.e(TAG, "Null Pointer", e);
@@ -634,7 +311,9 @@ public class TriageActivity extends Activity {
             for (String tech : techList) {
                 if (searchedTech.equals(tech)) {
                     //if so, read from the tag
-                    read(tag);
+                    Read reader = new Read(tag);
+                    reader.read();
+                    updateTextViews(reader.id, reader.result);
                     break;
                 }
             }
@@ -699,7 +378,7 @@ public class TriageActivity extends Activity {
         adapter.disableForegroundDispatch(activity);
     }
 
-    //These two methods were generated with the program, so I don't know if they are necessary
+    //These two methods were generated with teh program, so I don't know if they are necessary
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
 

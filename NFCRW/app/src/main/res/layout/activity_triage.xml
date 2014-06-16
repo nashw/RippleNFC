@@ -5,7 +5,8 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     tools:context="com.wesleyrnash.nfcreadandwritenofragment.TestActivity"
-    tools:ignore="MergeRootFrame" >
+    tools:ignore="MergeRootFrame"
+    android:weightSum="1">
 
     <Button
         android:layout_width="match_parent"
@@ -13,6 +14,7 @@
         android:layout_marginTop="25sp"
         android:text="@string/string_writeMode"
         android:id="@+id/button_readwrite"/>
+
 
     <TextView
         android:layout_width="wrap_content"
@@ -40,7 +42,9 @@
             android:layout_weight="1"
             android:id="@+id/et_firstName"/>
     </LinearLayout>
-
+<HorizontalScrollView
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
     <TableLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -100,7 +104,10 @@
         </TableRow>
 
     </TableLayout>
-
+</HorizontalScrollView>
+ <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
     <TableLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -130,6 +137,13 @@
                 android:text="Dose"
                 android:textSize="25sp"
                 android:layout_weight="1"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginRight="25sp"
+                android:text="Other"
+                android:textSize="25sp"
+                android:layout_weight="1"/>
         </TableRow>
 
         <TableRow
@@ -152,8 +166,14 @@
                 android:textSize="20sp"
                 android:layout_weight="1"
                 android:id="@+id/et_table2_row1_dose"/>
+            <EditText
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:layout_weight="1"
+                android:id="@+id/et_table2_row1_other"/>
         </TableRow>
 
     </TableLayout>
-
+    </HorizontalScrollView>
 </LinearLayout>
